@@ -11,10 +11,16 @@ import os
 import sys
 
 try:
-    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+    sys.path.append(
+        glob.glob(
+            "../PythonApi/carla/dist/carla-*%d.%d-%s.egg"
+            % (
+                sys.version_info.major,
+                sys.version_info.minor,
+                "win-amd64" if os.name == "nt" else "linux-x86_64",
+            )
+        )[0]
+    )
 except IndexError:
     pass
 
@@ -25,12 +31,12 @@ import random
 try:
     import pygame
 except ImportError:
-    raise RuntimeError('cannot import pygame, make sure pygame package is installed')
+    raise RuntimeError("cannot import pygame, make sure pygame package is installed")
 
 try:
     import numpy as np
 except ImportError:
-    raise RuntimeError('cannot import numpy, make sure numpy package is installed')
+    raise RuntimeError("cannot import numpy, make sure numpy package is installed")
 
 try:
     import queue
@@ -53,16 +59,19 @@ class CarlaSyncMode(object):
         self.world = world
         self.sensors = sensors
         self.frame = None
-        self.delta_seconds = 1.0 / kwargs.get('fps', 20)
+        self.delta_seconds = 1.0 / kwargs.get("fps", 20)
         self._queues = []
         self._settings = None
 
     def __enter__(self):
         self._settings = self.world.get_settings()
-        self.frame = self.world.apply_settings(carla.WorldSettings(
-            no_rendering_mode=False,
-            synchronous_mode=True,
-            fixed_delta_seconds=self.delta_seconds))
+        self.frame = self.world.apply_settings(
+            carla.WorldSettings(
+                no_rendering_mode=False,
+                synchronous_mode=True,
+                fixed_delta_seconds=self.delta_seconds,
+            )
+        )
 
         def make_queue(register_event):
             q = queue.Queue()
@@ -103,7 +112,7 @@ def draw_image(surface, image, blend=False):
 
 def get_font():
     fonts = [x for x in pygame.font.get_fonts()]
-    default_font = 'ubuntumono'
+    default_font = "ubuntumono"
     font = default_font if default_font in fonts else fonts[0]
     font = pygame.font.match_font(font)
     return pygame.font.Font(font, 14)
@@ -120,46 +129,55 @@ def should_quit():
 
 
 def main():
+    width = 640
+    height = 480
     actor_list = []
     pygame.init()
 
     display = pygame.display.set_mode(
-        (800, 600),
-        pygame.HWSURFACE | pygame.DOUBLEBUF)
+        (width, height), pygame.HWSURFACE | pygame.DOUBLEBUF
+    )
     font = get_font()
     clock = pygame.time.Clock()
 
-    client = carla.Client('localhost', 2000)
+    client = carla.Client("localhost", 2000)
     client.set_timeout(2.0)
-
     world = client.get_world()
 
     try:
         m = world.get_map()
-        start_pose = random.choice(m.get_spawn_points())
-        waypoint = m.get_waypoint(start_pose.location)
+        rec_pos = random.choice(m.get_spawn_points())
+        waypoint = m.get_waypoint(rec_pos.location)
 
         blueprint_library = world.get_blueprint_library()
 
-        vehicle = world.spawn_actor(
-            random.choice(blueprint_library.filter('vehicle.tesla*')),
-            start_pose)
-        actor_list.append(vehicle)
+        # blueprints
+        vehicle_bp = blueprint_library.filter("model3")[0]
+        rgb_camera_bp = blueprint_library.find("sensor.camera.rgb")
+        seg_camera_bp = blueprint_library.find("sensor.camera.semantic_segmentation")
+        # Transforms
+
+        cam_transform = carla.Transform(
+            carla.Location(x=-5.5, z=2.8), carla.Rotation(pitch=-15),
+        )
+        cam_transform2 = carla.Transform(carla.Location(x=1.6, z=1.7))
+
+        car_spawn_loc = carla.Transform(
+            carla.Location(x=-6.446170, y=-79.055023, z=0.275307),
+            carla.Rotation(pitch=0.000000, yaw=92.004189, roll=0.000000),
+        )
+
+        # spawn actors
+        vehicle = world.spawn_actor(vehicle_bp, rec_pos)
         vehicle.set_simulate_physics(False)
 
-        camera_rgb = world.spawn_actor(
-            blueprint_library.find('sensor.camera.rgb'),
-            carla.Transform(carla.Location(x=-5.5, z=2.8), carla.Rotation(pitch=-15)),
-            carla.Transform(carla.Location(x=1.6, z=1.7)),
-            attach_to=vehicle)
-
-        actor_list.append(camera_rgb)
-
+        camera_rgb = world.spawn_actor(rgb_camera_bp, cam_transform2, attach_to=vehicle)
         camera_semseg = world.spawn_actor(
-            blueprint_library.find('sensor.camera.semantic_segmentation'),
-            carla.Transform(carla.Location(x=-5.5, z=2.8), carla.Rotation(pitch=-15)),
-            carla.Transform(carla.Location(x=1.6, z=1.7),
-            attach_to=vehicle)
+            seg_camera_bp, cam_transform2, attach_to=vehicle
+        )
+
+        actor_list.append(vehicle)
+        actor_list.append(camera_rgb)
         actor_list.append(camera_semseg)
 
         # Create a synchronous mode context.
@@ -176,12 +194,12 @@ def main():
                 waypoint = random.choice(waypoint.next(1.5))
                 vehicle.set_transform(waypoint.transform)
 
-                #save images
-                image_rgb.save_to_disk('rgb_images/%08d' % image_rgb.frame)
-                image_semseg.save_to_disk('seg_images/%08d' % image_semseg.frame)
+                # save images
+                image_rgb.save_to_disk("rgb_images/%08d" % image_rgb.frame)
+                image_semseg.save_to_disk("seg_images/%08d" % image_semseg.frame)
 
                 image_semseg.convert(carla.ColorConverter.CityScapesPalette)
-                image_semseg.save_to_disk('_out_seg_city/%08d' % image_semseg.frame)
+                image_semseg.save_to_disk("seg_images_city/%08d" % image_semseg.frame)
 
                 fps = round(1.0 / snapshot.timestamp.delta_seconds)
 
@@ -189,28 +207,32 @@ def main():
                 draw_image(display, image_rgb)
                 draw_image(display, image_semseg, blend=True)
                 display.blit(
-                    font.render('% 5d FPS (real)' % clock.get_fps(), True, (255, 255, 255)),
-                    (8, 10))
+                    font.render(
+                        "% 5d FPS (real)" % clock.get_fps(), True, (255, 255, 255)
+                    ),
+                    (8, 10),
+                )
                 display.blit(
-                    font.render('% 5d FPS (simulated)' % fps, True, (255, 255, 255)),
-                    (8, 28))
+                    font.render("% 5d FPS (simulated)" % fps, True, (255, 255, 255)),
+                    (8, 28),
+                )
                 pygame.display.flip()
 
     finally:
 
-        print('destroying actors.')
+        print("destroying actors.")
         for actor in actor_list:
             actor.destroy()
 
         pygame.quit()
-        print('done.')
+        print("done.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     try:
 
         main()
 
     except KeyboardInterrupt:
-        print('\nCancelled by user. Bye!')
+        print("\nCancelled by user. Bye!")
